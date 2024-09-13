@@ -156,20 +156,6 @@ res_spatial <- bru(
     )
 )
 summary(res_spatial)
-###### SVC model
-res_svc <- bru(
-    components = log(Cd_mousse)~ -1 + intercept(1) + 
-    beta_s(geometry, weights = EMEP_air, model = spde) +
-    u(geometry, model = spde),
-    family = "gaussian",
-    data = df_FRANCE_count,
-    options = list(
-        control.compute = list(waic = TRUE, cpo = FALSE),
-        control.inla = list(int.strategy = "eb"),
-        verbose = FALSE
-    )
-)
-res_svc$summary.hyperpar
 
 ############# Spatial+ v1 model with EMEP fitted with bru
 spde_X <- spde <- inla.spde2.pcmatern(
@@ -274,27 +260,6 @@ res_spatial_plus1_gam_gam <- gam(
                                      s(lon, lat, k = 160),
                                  data = df_FRANCE_count)
 summary(res_spatial_plus1_gam_gam)
-
-###### SVC+ model
-svc_plus_components <- ~ -1 + intercept(1) + EMEP_air +
-    u(geometry, model = spde) +
-    beta_s(geometry, weights = EMEP_air, model = spde)
-
-svc_plus_formula <- log(Cd_mousse) ~ .
-
-res_svc_plus <- bru(
-    svc_plus_components,
-    like(
-        formula = svc_plus_formula,
-        family = "gaussian",
-        data = df_FRANCE_count
-    ),
-    options = list(
-        control.compute = list(waic = TRUE, cpo = FALSE),
-        control.inla = list(int.strategy = "eb"),
-        verbose = FALSE
-    )
-)
 
 ###### Spatial+ 2.0 model
 hyperparam <- res_spatial$summary.hyperpar
