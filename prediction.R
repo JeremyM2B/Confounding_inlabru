@@ -1,4 +1,4 @@
-source("code/Confunding/Confunding_methods.R")
+source("Confunding_methods.R")
 library(ggspatial)
 ################ France
 France <- terra::vect('data/regbiofr/region_biogeographique.shp')
@@ -41,7 +41,8 @@ res_EMEP <- bru(
     )
 )
 
-new_data$fitted_EMEP_air_bru <- true_EMEP_new - res_EMEP$summary.fitted.values[0:139199, ]$mean
+# Spatial +
+new_data$fitted_EMEP_air_bru <- true_EMEP_new - res_EMEP$summary.fitted.values[0:139199, ]$mean 
 
 mod_EMEP_lm <- lm(EMEP_air ~ -1 + x + y, data = new_data)
 new_data$fitted_EMEP_air_lm <- true_EMEP_new - mod_EMEP_lm$fitted.values
@@ -49,17 +50,21 @@ new_data$fitted_EMEP_air_lm <- true_EMEP_new - mod_EMEP_lm$fitted.values
 mod_EMEP_gam <-mgcv::gam(EMEP_air ~ s(x,y,k=60), data=new_data)
 new_data$fitted_EMEP_air_gam <- true_EMEP_new - mod_EMEP_gam$fitted.values
 
-# new_data$EMEP_air.eigen12 <- new_data$EMEP_air# TODO: change it 
-# ###Spatial+2
-# dist <- sp::spDists(new_data[, c("x", "y")])
 
-# Q <- inla.matern.cov(nu = 1, kappa = sqrt(8) / exp(log_range_u), dist)
 
-# r <- eigen(Q) # spectral decomposition
-# eigen.vect <- r$vectors # eigen vectors
+# Spatial+2
+dist <- sp::spDists(st_coordinates(new_data[, c("x","y")]), longlat=TRUE)
 
-# # find the decomposition in eigen vector
-# coef <- solve(eigen.vect, df_FRANCE_count$EMEP_air)
+Sigma <- inla.matern.cov(nu = 1, kappa = sqrt(8) / log_range_u, dist)
+Q <- solve(Sigma)
+r <- eigen(Q) # spectral decomposition
+eigen.vect <- r$vectors # eigen vectors
+
+
+# find the decomposition in eigen vector
+coef <- solve(eigen.vect, new_data$EMEP_air)
+
+new_data$EMEP_air.eigen341 <- as.vector(eigen.vect[, 0:341]%*%coef[0:341])
 
 
 ############## Plot maps of predictions ##############
