@@ -98,19 +98,6 @@ site_map <- df_FRANCE_count %>%
     distinct() %>%
     select(Cd_mousse, lon, lat)
 
-# # make a two extension hulls and mesh for spatial model
-# hull <- fm_extensions(
-#     df_FRANCE_count,
-#     convex = c(100, 600),
-#     concave = c(250, 600)
-# )
-
-# mesh <- fm_mesh_2d_inla(
-#     boundary = hull, max.edge = c(100000, 170000), # km inside and outside
-#     cutoff = 2000, offset = c(100000, 170000),
-#     crs = fm_crs(as.matrix(df_FRANCE_count))
-# ) # cutoff is min edge
-
 # make a mesh restricted to France geography
 
 st_coordinates(df_FRANCE_count)
@@ -126,24 +113,17 @@ new_mesh <- inla.mesh.2d(
                          crs = fm_crs(as.matrix(df_FRANCE_count)))
 
 # Mesh plot with measure sites
-plot_mesh <- ggplot() +
+ggplot() +
     gg(data = new_mesh) +
     geom_sf(data = site_map, col = "darkgreen", size = 1) +
     theme_bw() +
     labs(x = "", y = "")
-plot_mesh
-# ggsave(
-#   plot = plot_mesh,
-#   filename = "plot/new_mesh/mesh_map.png",
-#   device = "png",
-#   height = 10,
-#   units = "in",
-#   dpi = 300
-# )
+
+
 # make spde
 spde <- inla.spde2.pcmatern(
     mesh = new_mesh,
-    prior.range = c(60000, 0.05), # P(range < 30000) = 0.05
+    prior.range = c(60000, 0.05), # P(range < 60000) = 0.05
     prior.sigma = c(5, 0.05) # P(sigma > 5) = 0.05,
 )
 
@@ -191,45 +171,11 @@ res_svc <- bru(
 )
 res_svc$summary.hyperpar
 
-# ########### Spatial model RSR with covariance matrix
-
-# # RSR matrix
-# hyperparam <- res_spatial$internal.summary.hyperpar
-# log_range_u <- hyperparam["log(Range) for u", "mean"]
-# log_sigma_u <- hyperparam["log(Stdev) for u", "mean"]
-# dist <- sp::spDists(coordinates(df_FRANCE_subset[, c("lon", "lat")]))
-
-# Q <- inla.matern.cov(nu = 1, kappa = sqrt(8) / exp(log_range_u), dist)
-
-# X <- cbind(rep(1, length(df_FRANCE_count$EMEP_air)), df_FRANCE_count$EMEP_air)
-# Xt <- t(X)
-# XcovXt_inv <- solve(Xt %*% Q %*% X)
-# Id <- diag(nrow(X))
-
-# RSR_matrix <- (Id - Q %*% X %*% XcovXt_inv %*% Xt)
-# coeff_RSR <- numeric(ncol(RSR_matrix)) # vector of length 445 with zeros
-# for (i in 1:ncol(RSR_matrix)) {
-#     coeff_RSR[i] <- sum(RSR_matrix[, i])
-# }
-
-# res_RSR_cov <- bru(
-#     components = ~ -1 + intercept(1) + EMEP_air +
-#         u(geometry, model = spde, weights = coeff_RSR),
-#     formula = log(Cd_mousse) ~ .,
-#     family = "gaussian",
-#     data = df_FRANCE_count,
-#     options = list(
-#         control.compute = list(waic = TRUE, cpo = FALSE),
-#         control.inla = list(int.strategy = "eb"),
-#         verbose = FALSE
-#     )
-# )
-
 ############# Spatial+ v1 model with EMEP fitted with bru
 spde_X <- spde <- inla.spde2.pcmatern(
     mesh = new_mesh,
-    prior.range = c(130000, 0.05), # P(range < 100000) = 0.05
-    prior.sigma = c(13, 0.05) # P(sigma > 1) = 0.05,
+    prior.range = c(130000, 0.05), # P(range < 130000) = 0.05
+    prior.sigma = c(13, 0.05) # P(sigma > 13) = 0.05,
 )
 
 res_EMEP <- bru(
@@ -395,25 +341,15 @@ fit_with_eigen_vectors <- function(nbr_eigen_vectors = 445,
 
 res_spatial_plus2 <- fit_with_eigen_vectors(341)
 summary(res_spatial_plus2)
-######test RSR
 
-# res_RSR_no_i <- bru( components = ~ -1 + intercept(1) + X_Effect(EMEP_air) + u(geometry, model = spde),
-#     like(
-#         formula = log(Cd_mousse) ~ -1 + intercept + X_Effect + u - EMEP_air * length(EMEP_air)  / sum(EMEP_air^2), 
-#         family = "gaussian",
-#         data = df_FRANCE_count
-#     ),
-#     options = list(
-#             control.compute = list(waic = TRUE, cpo = FALSE),
-#             control.inla = list(int.strategy = "eb"),
-#             verbose = FALSE
-#         )
-# )
+#####RSR
+spde_RSR <- inla.spde2.pcmatern(
+    mesh = new_mesh,
+    prior.range = c(18000000, 0.9999), # P(range < 18000000) = 0.9999
+    prior.sigma = c(2.5, 0.0001) # P(sigma > 2.5) = 0.0001,
+)
 
-# summary(res_RSR_no_i)
-# mean((exp(res_RSR_no_i$summary.fitted.values[1:445, "mean"])-df_FRANCE_count$Cd_mousse)^2)
-
-res_RSR_with_i <- bru( components = ~ -1 + intercept(1) + X_Effect(EMEP_air) + u(geometry, model = spde),
+res_RSR_with_i <- bru( components = ~ -1 + intercept(1) + X_Effect(EMEP_air) + u(geometry, model = spde_RRS),
     like(
         formula = log(Cd_mousse) ~ 0 + intercept + X_Effect + u  - (sum(u) * sum(EMEP_air^2) + EMEP_air * (length(EMEP_air) * sum(EMEP_air * u) - sum(u) * sum(EMEP_air)) - sum(EMEP_air * u) * sum(EMEP_air)) / (length(EMEP_air) * sum(EMEP_air^2) - sum(EMEP_air)^2), 
         family = "gaussian",
@@ -426,6 +362,3 @@ res_RSR_with_i <- bru( components = ~ -1 + intercept(1) + X_Effect(EMEP_air) + u
         )
 )
 summary(res_RSR_with_i)
-# summary(res_RSR_with_i)
-# mean((exp(res_RSR_with_i$summary.fitted.values[1:445, "mean"])-df_FRANCE_count$Cd_mousse)^2)
-
