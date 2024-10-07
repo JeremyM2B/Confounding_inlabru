@@ -189,64 +189,6 @@ res_spatial_plus1 <- bru(
 )
 # summary(res_spatial_plus1)
 
-############# Spatial+ v1 model with EMEP fitted with lm
-mod_EMEP_lm <- lm(EMEP_air ~ -1 + lon + lat, data = df_FRANCE_count)
-# summary(mod_EMEP_lm$fitted.values)
-
-true_EMEP <- df_FRANCE_count$EMEP_air
-
-df_FRANCE_count$fitted_EMEP_air_lm <- true_EMEP - mod_EMEP_lm$fitted.values
-
-
-res_spatial_plus1_lm <- bru(
-    components = ~ -1 + intercept(1) +
-        fitted_EMEP_air_lm + u(geometry, model = spde),
-    like(
-        formula = log(Cd_mousse) ~ .,
-        family = "gaussian",
-        data = df_FRANCE_count
-    ),
-    options = list(
-        control.compute = list(waic = TRUE, cpo = FALSE),
-        control.inla = list(int.strategy = "eb"),
-        verbose = FALSE
-    )
-)
-summary(res_spatial_plus1_lm)
-
-############# Spatial+ v1 model with EMEP fitted with gam
-
-library(mgcv)
-
-k_sp <- 60
-
-mod_EMEP_gam <- gam(EMEP_air ~ -1 + s(lon, lat, k = 60), data = df_FRANCE_count)
-
-df_FRANCE_count$fitted_EMEP_air_gam <- true_EMEP - mod_EMEP_gam$fitted.values
-
-res_spatial_plus1_gam_bru <- bru(
-    components = ~ -1 + intercept(1) +
-        fitted_EMEP_air_gam + u(geometry, model = spde),
-    like(
-        formula = log(Cd_mousse) ~ .,
-        family = "gaussian",
-        data = df_FRANCE_count
-    ),
-    options = list(
-        control.compute = list(waic = TRUE, cpo = FALSE),
-        control.inla = list(int.strategy = "eb"),
-        verbose = FALSE
-    )
-)
-summary(res_spatial_plus1_gam_bru)
-
-res_spatial_plus1_gam_gam <- gam(
-    log(Cd_mousse) ~ fitted_EMEP_air_gam +
-        s(lon, lat, k = 160),
-    data = df_FRANCE_count
-)
-summary(res_spatial_plus1_gam_gam)
-
 ############# Spatial+ 2.0 model
 hyperparam <- res_spatial$summary.hyperpar
 log_range_u <- hyperparam["Range for u", "mean"]

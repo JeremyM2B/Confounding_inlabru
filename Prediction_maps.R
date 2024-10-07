@@ -166,32 +166,6 @@ map_spatial_plus1_bru <- make_prediction_map(pred_spatial_plus1_bru, "Spatial+ 1
 #        bg = "white"
 # )
 
-pred_spatial_plus1_lm <- predict(res_spatial_plus1_lm, newdata = new_data, formula = ~ exp(intercept + fitted_EMEP_air_lm + u))
-map_spatial_plus1_lm_max45 <- make_prediction_map(pred_spatial_plus1_lm, "Spatial+ 1 lm", max= 0.45)
-map_spatial_plus1_lm <- make_prediction_map(pred_spatial_plus1_lm, "Spatial+ 1 lm", max=0.01)
-# ggsave(map_spatial_plus1_lm,
-#        filename = "plot/map_sd_spp1_lm_001.png", 
-#        device='png', 
-#        height=7,
-#        width=7,
-#        units="in",
-#        dpi=300,
-#        bg = "white"
-# )
-
-pred_spatial_plus1_gam <- predict(res_spatial_plus1_gam_bru, newdata = new_data, formula = ~ exp(intercept + fitted_EMEP_air_gam + u))
-map_spatial_plus1_gam_max45 <- make_prediction_map(pred_spatial_plus1_gam, "Spatial+ 1 gam", max=0.45)
-map_spatial_plus1_gam <- make_prediction_map(pred_spatial_plus1_gam, "Spatial+ 1 gam", max= 0.01)
-# ggsave(map_spatial_plus1_gam,
-#        filename = "plot/map_sd_spp1_gam_001.png", 
-#        device='png', 
-#        height=7,
-#        width=7,
-#        units="in",
-#        dpi=300,
-#        bg = "white"
-# )
-
 ###### all models
 multiplot(map_null, map_RSR, map_spatial, map_spatial_plus1_bru, cols=3)
 dev.print(png,

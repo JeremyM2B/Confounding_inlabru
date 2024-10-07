@@ -1,10 +1,4 @@
----
-title: "Simulations de données spatialisé sous modèles spatial"
-output: html_notebook
----
-
-# Bibliothèque
-```{r, warning = FALSE, message= FALSE}
+## Libraries
 library(INLA)
 library(inlabru)
 library(dplyr)
@@ -12,27 +6,24 @@ library(ggplot2)
 library(fields)
 library(furrr)
 library(knitr)
-```
 
-# Fixed parameters
-```{r}
+
+## Fixed parameters
 n <- 500
 n_sim <- 50
 beta <- 3
-```
 
-# Mesh
-```{r}
+
+## Create mesh
 fake.locations <- matrix(c(0, 0, 10, 10, 0, 10, 10, 0), nrow = 4, byrow = T)
 crs1 <- inla.CRS("EPSG:4326")
 mesh.sim <- inla.mesh.2d(loc = fake.locations, max.edge = c(0.61, 1), crs = crs1)
 
 ggplot() +
   gg(mesh.sim)
-```
 
-# SPDE
-```{r, warning= FALSE}
+
+## SPDE
 # Simulate spatial field
 seed <- 7
 
@@ -47,17 +38,12 @@ spde_s <- inla.spde2.pcmatern(mesh.sim, alpha = 2, prior.range = c(.5, .5), prio
 Qu_s <- inla.spde.precision(spde_s, theta = c(0, 1))
 
 u_s <- inla.qsample(n = 1, Q = Qu_s, seed = seed)
-```
 
-# Plot field
-```{r}
+## Plot fields
 local.plot.field(u_xs[, 1] - mean(u_xs[, 1]), mesh.sim)
 local.plot.field(u_s[, 1] - mean(u_s[, 1]), mesh.sim)
-```
 
-
-# Simulate at measurement locations
-```{r}
+## Simulate at measurement locations
 set.seed(123)
 
 u_s_xs <- matrix(data = NA, nrow = n, ncol = n_sim)
@@ -103,10 +89,9 @@ testdfsf <- testdf %>%
 
 plot(gstat::variogram(0.35 * (u_xs - mean(u_xs)) ~ 1, testdfsf))
 plot(gstat::variogram(0.275 * (u_s - mean(u_s)) ~ 1, testdfsf))
-```
 
-# Random effects
-```{r, warning = FALSE}
+
+## Generate random effects
 generate_epsilon <- function() {
   rnorm(n, mean = 0, sd = 1)
 }
@@ -115,10 +100,9 @@ epsilon_list <- lapply(1:n_sim, function(x) generate_epsilon())
 
 epsilon <- as(do.call(cbind, epsilon_list), "dgeMatrix")
 plot(density(epsilon_list[[1]]))
-```
 
-# Covariate x
-```{r, message = FALSE, warning = FALSE}
+
+## Covariate x
 generate_epsilon_x <- function() {
   rnorm(n, mean = 0, sd = 0.1)
 }
@@ -128,19 +112,16 @@ epsilon_x <- as(do.call(cbind, epsilon_list_x), "dgeMatrix")
 
 x <- 0.35 * (u_s_xs - mean(u_s_xs)) + epsilon_x
 
-```
 
 
-# Variable y
-```{r}
+## Variable y
 ux <- (u_s_xs - mean(u_s_xs))
 us <- 0.275 * (u_s_s - mean(u_s_s))
 Z <- us - ux
 y <- beta * x + Z + epsilon
-```
 
-# Dataframe
-```{r}
+
+## Simulation dataframes
 df_list <- lapply(1:n_sim, function(i) {
   data.frame(
     y = as.matrix(y)[, i],
@@ -167,33 +148,26 @@ test <- lapply(df_sf_list, function(sf_obj) {
 plot(gstat::variogram(x ~ 1, df_list[[1]], locations = ~ locx + locy))
 plot(gstat::variogram(y ~ 1, df_list[[1]], locations = ~ locx + locy))
 plot(gstat::variogram(Z ~ 1, df_list[[1]], locations = ~ locx + locy))
-```
-```{r}
+
 rm(A, B, crs1, epsilon, epsilon_list, fake.locations, Qu_s, Qu_xs, spde_s, spde_xs, test, testdf, testdfsf, u_s, u_s_s, u_s_xs, u_xs, us, ux, x, y, Z)
-```
 
--------------------------------------------------------------------------------------------------------------------------------
+############# Apply models to simulated data #############
 
-# Methods application to simulated data
-
-```{r}
 # load simulated data that contains a dataframe df_sf_list
 load("data/simu_data.Rdata")
 
 # head(df_sf_list[[1]])
-```
 
-# SPDE
-```{r}
+
+## SPDE
 spde_spat <- inla.spde2.pcmatern(
   mesh = mesh.sim,
   prior.range = c(0.05, 0.05), # P(range < 0.05) = 0.05
   prior.sigma = c(3, 0.05) # P(sigma > 3) = 0.05
 )
-```
 
-# NULL model
-```{r, warning = FALSE}
+
+### NULL model ###
 plan(multisession, workers = 4)
 model_function_NULL <- function(i) {
   bru(y ~ 0 + x, family = "gaussian", data = df_sf_list[[i]])
@@ -232,10 +206,8 @@ names(DIC_model_NULL) <- "value"
 DIC_model_NULL$Group <- rep(c("DIC NULL"), each = n_sim)
 
 #rm(model_function_NULL, model_NULL)
-```
 
-# Spatial model
-```{r, warning = FALSE}
+### Spatial model ###
 plan(multisession, workers = 4)
 
 model_function_spatial <- function(i) {
@@ -274,10 +246,9 @@ DIC_model_spatial <- lapply(1:n_sim, function(i) model_spatial[[i]]$dic$dic) %>%
 
 names(DIC_model_spatial) <- "value"
 DIC_model_spatial$Group <- rep(c("DIC spatial"), each = n_sim)
-```
 
-# model RSR
-```{r}
+
+### RSR model ###
 spde_RSR <- inla.spde2.pcmatern(
   mesh = mesh.sim,
   prior.range = c(15, .9999), # P(range < 15) = 0.9999
@@ -335,11 +306,9 @@ names(DIC_model_RSR) <- "value"
 DIC_model_RSR$Group <- rep(c("DIC RSR"), each = n_sim)
 
 #rm(model_function_RSR, model_RSR)
-```
 
-# model spatial + 
-```{r, warning = FALSE, message = FALSE}
 
+### Spatial+ model ###
 spde_X <- inla.spde2.pcmatern(
   mesh = mesh,
   prior.range = c(0.01, 0.01),
@@ -398,16 +367,14 @@ names(DIC_model_spatial_plus) <- "value"
 DIC_model_spatial_plus$Group <- rep(c("DIC spatial plus"), each = n_sim)
 
 # rm(model_x_fit, x_fit, x_true, fitted_x_bru, df_sf_list_new, model_function_spatial_plus, model_spatial_plus)
-```
 
-# model spatial + V2 
-```{r, warning = FALSE, message = FALSE}
+
+### Spatial+ 2.0 ###
 spde_spatialplus2 <- inla.spde2.pcmatern(
   mesh = mesh,
   prior.range = c(0.05, 0.01),
   prior.sigma = c(2, 0.01)
 )
-
 
 dist <- lapply(df_list, function(df) sp::spDists(coordinates(df[, c("locx", "locy")])))
 
@@ -480,10 +447,9 @@ names(DIC_model_spatial_plus2) <- "value"
 DIC_model_spatial_plus2$Group <- rep(c("DIC spatial plus V2"), each = n_sim)
 
 rm(hyperparam, log_range_u, log_sigma_u, dist, Q, r, coef, model_spatial_plus2)
-```
 
-# Beta boxplot
-```{r}
+
+## Beta boxplots
 combined <- rbind(bru_beta_NULL, bru_beta_spatial, bru_beta_RSR, bru_beta_spatial_plus, bru_beta_spatial_plus2)
 
 ggplot(combined, aes(x = "", y = value, fill = Group)) +
@@ -492,10 +458,9 @@ ggplot(combined, aes(x = "", y = value, fill = Group)) +
   labs(x = "", y = "Value", title = "Boxplot posterior beta") +
   geom_hline(yintercept = beta, linetype = "dashed", color = "red") +
   theme_minimal()
-```
 
-# Affichage sd beta
-```{r}
+
+## Plot beta Standard error
 combined_sd <- rbind(bru_beta_sd_NULL, bru_beta_sd_spatial, bru_beta_sd_RSR, bru_beta_sd_spatial_plus, bru_beta_sd_spatial_plus2)
 
 ggplot(combined_sd, aes(x = "", y = value, fill = Group)) +
@@ -503,10 +468,9 @@ ggplot(combined_sd, aes(x = "", y = value, fill = Group)) +
   geom_boxplot() +
   labs(x = "", y = "Value", title = "Boxplot posterior beta sd") +
   theme_minimal()
-```
 
-# Affichage WAIC
-```{r, warning=FALSE}
+
+## Plot WAIC
 combined_WAIC <- rbind(WAIC_model_NULL, WAIC_model_spatial, WAIC_model_RSR, WAIC_model_spatial_plus, WAIC_model_spatial_plus2)
 
 ggplot(combined_WAIC, aes(x = "", y = value, fill = Group)) +
@@ -514,10 +478,9 @@ ggplot(combined_WAIC, aes(x = "", y = value, fill = Group)) +
   geom_boxplot() +
   labs(x = "", y = "Value", title = "Boxplot WAIC") +
   theme_minimal()
-```
 
-# Affichage DIC
-```{r, warning=FALSE}
+
+## Plot DIC
 combined_DIC <- rbind(DIC_model_NULL, DIC_model_spatial, DIC_model_RSR, DIC_model_spatial_plus, DIC_model_spatial_plus2)
 
 ggplot(combined_DIC, aes(x = "", y = value, fill = Group)) +
@@ -525,4 +488,4 @@ ggplot(combined_DIC, aes(x = "", y = value, fill = Group)) +
   geom_boxplot() +
   labs(x = "", y = "Value", title = "Boxplot DIC") +
   theme_minimal()
-```
+
