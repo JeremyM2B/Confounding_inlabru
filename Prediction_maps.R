@@ -1,15 +1,16 @@
-source("Confunding_methods.R")
+source("Application.R")
 library(ggspatial)
-################ France
+
+################ France data
 France <- terra::vect('data/regbiofr/region_biogeographique.shp')
 
 France <- France[France$CODE == "ALP" | France$CODE == "CON" | France$CODE == "ATL" | France$CODE == "MED" ]
 
-######### Grille
+######### Grid
 
 gridPCM <-  SpatialPosition::CreateGrid(w = France, resolution = 2000, returnclass = "sf")#2000 = 2km x 2km
 
-############## prepare new data ##############
+############## Prepare new data ##############
 new <- c()
 
 new$lon <- gridPCM$COORDX
@@ -24,7 +25,7 @@ new_data <- as.data.frame(new_rast$EMEP_air, xy=TRUE) %>%
     st_as_sf(coords = c("x", "y"), crs = 2154, remove = FALSE) %>%
     st_transform("EPSG:2154")
 
-###Spatial+1
+#Spatial+1
 true_EMEP_new <- new_data$EMEP_air
 
 res_EMEP <- bru(
@@ -41,7 +42,6 @@ res_EMEP <- bru(
     )
 )
 
-# Spatial +
 new_data$fitted_EMEP_air_bru <- true_EMEP_new - res_EMEP$summary.fitted.values[0:139199, ]$mean 
 
 mod_EMEP_lm <- lm(EMEP_air ~ -1 + x + y, data = new_data)
@@ -51,30 +51,27 @@ mod_EMEP_gam <-mgcv::gam(EMEP_air ~ s(x,y,k=60), data=new_data)
 new_data$fitted_EMEP_air_gam <- true_EMEP_new - mod_EMEP_gam$fitted.values
 
 
-
 # Spatial+2
-dist <- sp::spDists(st_coordinates(new_data[, c("x","y")]), longlat=TRUE)
+# dist <- sp::spDists(st_coordinates(new_data[, c("x","y")]), longlat=TRUE)
 
-Sigma <- inla.matern.cov(nu = 1, kappa = sqrt(8) / log_range_u, dist)
-Q <- solve(Sigma)
-r <- eigen(Q) # spectral decomposition
-eigen.vect <- r$vectors # eigen vectors
+# Sigma <- inla.matern.cov(nu = 1, kappa = sqrt(8) / log_range_u, dist)
+# Q <- solve(Sigma)
+# r <- eigen(Q) # spectral decomposition
+# eigen.vect <- r$vectors # eigen vectors
 
 
-# find the decomposition in eigen vector
-coef <- solve(eigen.vect, new_data$EMEP_air)
+# # find the decomposition in eigen vector
+# coef <- solve(eigen.vect, new_data$EMEP_air)
 
-new_data$EMEP_air.eigen341 <- as.vector(eigen.vect[, 0:341]%*%coef[0:341])
+# new_data$EMEP_air.eigen341 <- as.vector(eigen.vect[, 0:310]%*%coef[0:310])
 
 
 ############## Plot maps of predictions ##############
-source("code/function.R")
 
-
-make_prediction_map <- function(pred_data, title, min = 0, max = 0.55, scale_title="prediction Cd (µg/g)\n variance") {
+make_prediction_map <- function(pred_data, title, min = 0, max = 0.55, scale_title="prediction Cd (µg/g)\n mean") {
     if(class(pred_data)[1] == "bru_prediction") {
         pred_data$var <- pred_data$sd^2
-        data_plot <- gg(pred_data, aes(fill = var), geom = "tile")
+        data_plot <- gg(pred_data, aes(fill = mean), geom = "tile")
     } else {
         data_plot <- tidyterra::geom_spatraster(data = pred_data, maxcell = 5e+07)
     }
@@ -119,145 +116,87 @@ make_prediction_map <- function(pred_data, title, min = 0, max = 0.55, scale_tit
 }
 
 
-
 pred_null <- predict(res_null, newdata = new_data, formula = ~ exp(intercept + EMEP_air))
 map_null <- make_prediction_map(pred_null, "Null", max=0.19)
-ggsave(map_null,
-       filename = "plot/new_mesh/map_sd_null.png", 
-       device='png', 
-       height=7,
-       width=7,
-       units="in",
-       dpi=300,
-       bg = "white"
-)
-#0.00001249496 0.15225653432 pour range var
-# 0.1269320 0.9791327 pour range mean
+# ggsave(map_null,
+#        filename = "plot/map_sd_null.png", 
+#        device='png', 
+#        height=7,
+#        width=7,
+#        units="in",
+#        dpi=300,
+#        bg = "white"
+# )
+
 pred_spatial <- predict(res_spatial, newdata = new_data, formula = ~ exp(intercept + EMEP_air + u))
 map_spatial <- make_prediction_map(pred_spatial, "Spatial" ,max=0.01)
-ggsave(map_spatial,
-       filename = "plot/new_mesh/map_sd_spatial_001.png", 
-       device='png', 
-       height=7,
-       width=7,
-       units="in",
-       dpi=300,
-       bg = "white"
-)
-#0.00006194072 0.01089490337 range var
-#0.0479697 0.4034578 range mean
+# ggsave(map_spatial,
+#        filename = "plot/map_sd_spatial_001.png", 
+#        device='png', 
+#        height=7,
+#        width=7,
+#        units="in",
+#        dpi=300,
+#        bg = "white"
+# )
+
 pred_RSR <- predict(res_RSR_with_i, newdata = new_data, formula = ~ exp(intercept + X_Effect + u  - (sum(u) * sum(EMEP_air^2) + EMEP_air * (length(EMEP_air) * sum(EMEP_air * u) - sum(u) * sum(EMEP_air)) - sum(EMEP_air * u) * sum(EMEP_air)) / (length(as.vector(EMEP_air)) * sum(EMEP_air^2) - sum(EMEP_air)^2)))
 map_RSR <- make_prediction_map(pred_RSR, "RSR with intercept", max=0.19)
-ggsave(map_RSR,
-       filename = "plot/new_mesh/map_sd_RSR.png", 
-       device='png', 
-       height=7,
-       width=7,
-       units="in",
-       dpi=300,
-       bg = "white"
-)
-#0.00001737522 0.19046443398 rnage var
-#0.1274805 1.0713482 range mean
+# ggsave(map_RSR,
+#        filename = "plot/map_sd_RSR.png", 
+#        device='png', 
+#        height=7,
+#        width=7,
+#        units="in",
+#        dpi=300,
+#        bg = "white"
+# )
+
 
 pred_spatial_plus1_bru <- predict(res_spatial_plus1, newdata = new_data, formula = ~ exp(intercept + fitted_EMEP_air_bru + u))
 map_spatial_plus1_bru_max45 <- make_prediction_map(pred_spatial_plus1_bru, "Spatial+ 1 GF", max=0.45)
 map_spatial_plus1_bru <- make_prediction_map(pred_spatial_plus1_bru, "Spatial+ 1 GF", max=0.19)
-ggsave(map_spatial_plus1_bru,
-       filename = "plot/new_mesh/map_sd_spp1_GF.png", 
-       device='png', 
-       height=7,
-       width=7,
-       units="in",
-       dpi=300,
-       bg = "white"
-)
-#0.0001524983 0.0097456196 range var
-# 0.04789815 0.38260990 range mean
+# ggsave(map_spatial_plus1_bru,
+#        filename = "plot/map_sd_spp1_GF.png", 
+#        device='png', 
+#        height=7,
+#        width=7,
+#        units="in",
+#        dpi=300,
+#        bg = "white"
+# )
+
 pred_spatial_plus1_lm <- predict(res_spatial_plus1_lm, newdata = new_data, formula = ~ exp(intercept + fitted_EMEP_air_lm + u))
 map_spatial_plus1_lm_max45 <- make_prediction_map(pred_spatial_plus1_lm, "Spatial+ 1 lm", max= 0.45)
 map_spatial_plus1_lm <- make_prediction_map(pred_spatial_plus1_lm, "Spatial+ 1 lm", max=0.01)
-ggsave(map_spatial_plus1_lm,
-       filename = "plot/new_mesh/map_sd_spp1_lm_001.png", 
-       device='png', 
-       height=7,
-       width=7,
-       units="in",
-       dpi=300,
-       bg = "white"
-)
-#0.00005218442 0.01006931117 range var
-# 0.04907486 0.40952980 range mean
+# ggsave(map_spatial_plus1_lm,
+#        filename = "plot/map_sd_spp1_lm_001.png", 
+#        device='png', 
+#        height=7,
+#        width=7,
+#        units="in",
+#        dpi=300,
+#        bg = "white"
+# )
 
 pred_spatial_plus1_gam <- predict(res_spatial_plus1_gam_bru, newdata = new_data, formula = ~ exp(intercept + fitted_EMEP_air_gam + u))
 map_spatial_plus1_gam_max45 <- make_prediction_map(pred_spatial_plus1_gam, "Spatial+ 1 gam", max=0.45)
 map_spatial_plus1_gam <- make_prediction_map(pred_spatial_plus1_gam, "Spatial+ 1 gam", max= 0.01)
-ggsave(map_spatial_plus1_gam,
-       filename = "plot/new_mesh/map_sd_spp1_gam_001.png", 
-       device='png', 
-       height=7,
-       width=7,
-       units="in",
-       dpi=300,
-       bg = "white"
-)
-#0.00006153373 0.00655636313 range var
-#0.04451716 0.40018306 range mean
-
-# pred_spatial_plus2 <- predict(res_spatial_plus2, newdata = new_data, formula = ~ exp(intercept + EMEP_air.eigen12 + u))
-# map_spatial_plus2 <- make_prediction_map(pred_spatial_plus2, "Spatial+ 2")
-
-pred_svc <- predict(res_svc, newdata = new_data, formula = ~ exp(intercept + beta_s + u))
-map_svc <- make_prediction_map(pred_svc, "SVC", max=0.1)
-
-pred_svc_plus <- predict(res_svc_plus, newdata = new_data, formula = ~ exp(intercept + beta_s + EMEP_air + u))
-map_svc_plus <- make_prediction_map(pred_svc_plus, "SVC+", max=0.1)
-
-###### Compare Spatial + v1 models
-multiplot(map_spatial_plus1_bru_max45, map_spatial_plus1_lm_max45, map_spatial_plus1_gam_max45, cols=2)
-dev.print(png,
-    file = "plot/new_mesh/prediction_maps_spatial+1.png",
-    width = 3500,
-    height = 2500,
-    units = "px"
-)
-
-###### all models
-multiplot(map_null, map_RSR, map_spatial, map_spatial_plus1_lm, map_svc, map_svc_plus, cols=3)
-dev.print(png,
-    file = "plot/new_mesh/prediction_maps_sd.png",
-    width = 4000,
-    height = 3000,
-    units = "px"
-)
-
-
-multiplot(map_null, map_RSR, cols=2)
-dev.print(png,
-    file = "plot/new_mesh/prediction_maps_null_RSR.png",
-    width = 2500,
-    height = 1200,
-    units = "px"
-)
-multiplot(map_null, map_spatial, map_RSR, map_spatial_plus1_lm, cols=2)
-# ggsave(
-#   filename = "plot/new_mesh/prediction_maps.png",
-#   device = "png",
-#   height = 15,
-#   units = "in",
-#   dpi = 300
+# ggsave(map_spatial_plus1_gam,
+#        filename = "plot/map_sd_spp1_gam_001.png", 
+#        device='png', 
+#        height=7,
+#        width=7,
+#        units="in",
+#        dpi=300,
+#        bg = "white"
 # )
 
+###### all models
+multiplot(map_null, map_RSR, map_spatial, map_spatial_plus1_bru, cols=3)
 dev.print(png,
-    file = "plot/new_mesh/prediction_maps_4_sd.png",
-    width = 1700,
-    height = 1000,
-    units = "px"
-)
-
-multiplot(map_spatial, map_spatial_plus1_gam, map_svc, map_svc_plus, cols=2)
-dev.print(png,
-    file = "plot/new_mesh/prediction_maps_spatial_and_co.png",
-    width = 2500,
+    file = "plot/prediction_maps_sd.png",
+    width = 4000,
+    height = 3000,
     units = "px"
 )
