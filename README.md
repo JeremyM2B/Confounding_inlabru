@@ -11,10 +11,14 @@ This project includes various scripts and datasets used for simulations and appl
 - **function.R**: Contains functions used in the Simulation.R script.
 
 - **data folder contains**:
-        - regbiofr: Contains the .shp shapefiles of France.
-        - df_FRANCE.Rdata: Contains data on Cadmium (Cd) concentrations in mosses throughout France, along with their coordinates.
-        - df_france_cd_air_2026: Contains data on Cd concentrations in the air, modelled using the EMEP physical model.
-        - simu_data.Rdata: Contains simulated datasets, allowing for the avoidance of code compilation in the Simulation.R script.
+
+  - regbiofr: Contains the .shp shapefiles of France.
+  
+  - df_FRANCE.Rdata: Contains data on Cadmium (Cd) concentrations in mosses throughout France, along with their coordinates.
+  
+  - df_france_cd_air_2026: Contains data on Cd concentrations in the air, modelled using the EMEP physical model.
+
+  - simu_data.Rdata: Contains simulated datasets, allowing for the avoidance of code compilation in the Simulation.R script.
 
 
 # Usage
