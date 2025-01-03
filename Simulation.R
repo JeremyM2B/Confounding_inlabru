@@ -205,7 +205,7 @@ DIC_model_NULL <- lapply(1:n_sim, function(i) model_NULL[[i]]$dic$dic) %>%
 names(DIC_model_NULL) <- "value"
 DIC_model_NULL$Group <- rep(c("DIC NULL"), each = n_sim)
 
-#rm(model_function_NULL, model_NULL)
+# rm(model_function_NULL, model_NULL)
 
 ### Spatial model ###
 plan(multisession, workers = 4)
@@ -272,6 +272,13 @@ model_function_RSR <- function(i) {
     )
   )
 }
+# start_time <- Sys.time()
+# model_RSR <- furrr::future_map(1:1, model_function_RSR, .options = furrr_options(seed = TRUE))
+
+# end_time <- Sys.time()
+
+# time_taken <- end_time - start_time
+# print(paste("Time taken:", time_taken))
 
 model_RSR <- furrr::future_map(1:n_sim, model_function_RSR, .options = furrr_options(seed = TRUE))
 
@@ -305,8 +312,79 @@ DIC_model_RSR <- lapply(1:n_sim, function(i) model_RSR[[i]]$dic$dic) %>%
 names(DIC_model_RSR) <- "value"
 DIC_model_RSR$Group <- rep(c("DIC RSR"), each = n_sim)
 
-#rm(model_function_RSR, model_RSR)
+# rm(model_function_RSR, model_RSR)
 
+### RSR model with extraconstr ###
+
+plan(multisession, workers = 4)
+n_nodes <- mesh.sim$n
+model_function_RSR_extra <- function(i) {
+  A.rsr <- inla.spde.make.A(mesh.sim, loc = df_sf_list[[i]]$geometry)
+  e.rsr <- rep(0, nrow(A.rsr))
+
+  bru(
+    components = ~ 0 + X_Effect(x) + u(geometry, model = spde_RSR, extraconstr = list(A = A.rsr, e = e.rsr)),
+    like(
+      formula = y ~ .,
+      family = "gaussian",
+      data = df_sf_list[[i]]
+    ),
+    options = list(
+      control.compute = list(waic = TRUE, cpo = FALSE),
+      control.inla = list(int.strategy = "eb"),
+      verbose = FALSE
+    )
+  )
+}
+
+
+# start_time <- Sys.time()
+
+# model_RSR_extra <- furrr::future_map(
+#   1:1,
+#   model_function_RSR_extra,
+#   .options = furrr_options(seed = TRUE)
+# )
+
+# end_time <- Sys.time()
+
+# time_taken <- end_time - start_time
+# print(paste("Time taken:", time_taken))
+
+model_RSR_extra <- furrr::future_map(
+  1:n_sim,
+  model_function_RSR_extra,
+  .options = furrr_options(seed = TRUE)
+)
+# beta model RSR_extra
+bru_beta_RSR_extra <- list()
+bru_beta_RSR_extra <- sapply(1:n_sim, function(i) model_RSR_extra[[i]]$summary.fixed$mean)
+bru_beta_RSR_extra <- as.data.frame(bru_beta_RSR_extra) %>% rename(value = "bru_beta_RSR_extra")
+bru_beta_RSR_extra$Group <- rep(c("beta RSR_extra"), each = n_sim)
+
+# beta sd model RSR_extra
+bru_beta_sd_RSR_extra <- list()
+bru_beta_sd_RSR_extra <- sapply(1:n_sim, function(i) model_RSR_extra[[i]]$summary.fixed$sd)
+bru_beta_sd_RSR_extra <- as.data.frame(bru_beta_sd_RSR_extra) %>% rename(value = "bru_beta_sd_RSR_extra")
+bru_beta_sd_RSR_extra$Group <- rep(c("beta sd RSR_extra"), each = n_sim)
+
+# WAIC
+WAIC_model_RSR_extra <- c()
+WAIC_model_RSR_extra <- lapply(1:n_sim, function(i) model_RSR_extra[[i]]$waic$waic) %>%
+  unlist() %>%
+  as.data.frame()
+
+names(WAIC_model_RSR_extra) <- "value"
+WAIC_model_RSR_extra$Group <- rep(c("WAIC RSR_extra"), each = n_sim)
+
+# DIC
+DIC_model_RSR_extra <- c()
+DIC_model_RSR_extra <- lapply(1:n_sim, function(i) model_RSR_extra[[i]]$dic$dic) %>%
+  unlist() %>%
+  as.data.frame()
+
+names(DIC_model_RSR_extra) <- "value"
+DIC_model_RSR_extra$Group <- rep(c("DIC RSR_extra"), each = n_sim)
 
 ### Spatial+ model ###
 spde_X <- inla.spde2.pcmatern(
@@ -388,30 +466,32 @@ coef <- lapply(1:n_sim, function(i) solve(eigen.vect[[i]], df_sf_list[[i]]$x))
 
 fit_with_eigen_vectors <- function(nbr_eigen_vectors = 500,
                                    data = df_sf_list[[1]],
-                                   decomposition=coef, e_vect = eigen.vect) {
-    col_name <- paste("x.eigen", nbr_eigen_vectors, sep = "")
-    if(nbr_eigen_vectors == 1){
-        data[, col_name] <-  as.vector(e_vect[, 0:nbr_eigen_vectors] * decomposition[0:nbr_eigen_vectors])
-    }else{
-        data[, col_name] <-  as.vector(e_vect[, 0:nbr_eigen_vectors]%*%decomposition[0:nbr_eigen_vectors])
-    }
-    res <- bru(
-        components = as.formula(
-          paste0("~ -1 + ",
-                 col_name, " + u(geometry, model = spde_spat)", sep = "")
-        ),
-        like(
-            formula = y ~ .,
-            family = "gaussian",
-            data = data
-        ),
-        options = list(
-            control.compute = list(waic = TRUE, cpo = FALSE),
-            control.inla = list(int.strategy = "eb"),
-            verbose = FALSE
-        )
+                                   decomposition = coef, e_vect = eigen.vect) {
+  col_name <- paste("x.eigen", nbr_eigen_vectors, sep = "")
+  if (nbr_eigen_vectors == 1) {
+    data[, col_name] <- as.vector(e_vect[, 0:nbr_eigen_vectors] * decomposition[0:nbr_eigen_vectors])
+  } else {
+    data[, col_name] <- as.vector(e_vect[, 0:nbr_eigen_vectors] %*% decomposition[0:nbr_eigen_vectors])
+  }
+  res <- bru(
+    components = as.formula(
+      paste0("~ -1 + ",
+        col_name, " + u(geometry, model = spde_spat)",
+        sep = ""
+      )
+    ),
+    like(
+      formula = y ~ .,
+      family = "gaussian",
+      data = data
+    ),
+    options = list(
+      control.compute = list(waic = TRUE, cpo = FALSE),
+      control.inla = list(int.strategy = "eb"),
+      verbose = FALSE
     )
-    return(res)
+  )
+  return(res)
 }
 
 model_spatial_plus2 <- lapply(1:n_sim, function(i) fit_with_eigen_vectors(nbr_eigen_vectors = 400, data = df_sf_list[[i]], decomposition = coef[[i]], e_vect = eigen.vect[[i]]))
@@ -488,4 +568,3 @@ ggplot(combined_DIC, aes(x = "", y = value, fill = Group)) +
   geom_boxplot() +
   labs(x = "", y = "Value", title = "Boxplot DIC") +
   theme_minimal()
-
