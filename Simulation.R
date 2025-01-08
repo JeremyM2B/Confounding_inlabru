@@ -529,6 +529,52 @@ DIC_model_spatial_plus2$Group <- rep(c("DIC spatial plus V2"), each = n_sim)
 rm(hyperparam, log_range_u, log_sigma_u, dist, Q, r, coef, model_spatial_plus2)
 
 
+# gSEM
+library(mgcv)
+
+model_function_gSEM <- function(i) {
+  f_X_hat <- gam(x ~ s(locx, locy, k = 300, fx = TRUE), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
+  r_X <- df_sf_list[[i]]$x - f_X_hat
+  f_Y_hat <- gam(y ~ s(locx, locy, k = 300, fx = TRUE), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
+  r_Y <- df_sf_list[[i]]$y - f_Y_hat
+  mod <- lm(r_Y ~ -1 + r_X)
+  print(mod$coefficients)
+  bru_beta_hat <- mod$coefficients[1]
+  return(bru_beta_hat)
+}
+plan(multisession, workers = 4)
+model_gSEM <- furrr::future_map(1:n_sim, model_function_gSEM, .options = furrr_options(seed = 123))
+r_X_values <- purrr::map_dbl(model_gSEM, "r_X")
+mean(r_X_values)
+sd(r_X_values)
+
+# gSEM with bru
+model_function_gSEM_bru <- function(i) {
+  f_X_hat <- bru(x ~ 0 + u(geometry, model = spde_spat), data = df_sf_list[[i]], family = "gaussian")$summary.fitted.values[1:n, ]$mean
+  r_X <- df_sf_list[[i]]$x - f_X_hat
+  f_Y_hat <- bru(y ~ 0 + u(geometry, model = spde_spat), data = df_sf_list[[i]], family = "gaussian")$summary.fitted.values[1:n, ]$mean
+  r_Y <- df_sf_list[[i]]$y - f_Y_hat
+  bru(r_Y ~ 0 + r_X, family = "gaussian", data = df_sf_list[[i]])
+}
+plan(multisession, workers = 4)
+model_gSEM <- furrr::future_map(1:n_sim, model_function_gSEM_bru, .options = furrr_options(seed = 123))
+
+bru_beta_gSEM <- sapply(1:n_sim, function(i) model_gSEM[[i]]$summary.fixed$mean)
+bru_beta_gSEM_sd <- sapply(1:n_sim, function(i) model_gSEM[[i]]$summary.fixed$sd)
+WAIC_model_gSEM <- sapply(1:n_sim, function(i) model_gSEM[[i]]$waic$waic)
+DIC_model_gSEM <- sapply(1:n_sim, function(i) model_gSEM[[i]]$dic$dic)
+
+mean(DIC_model_gSEM)
+median(bru_beta_gSEM)
+sd(bru_beta_gSEM)
+CI <- function(model, nbr = n_sim, beta = 3) {
+  interval <- lapply(1:nbr, function(i) model[[i]]$summary.fixed[1, c("0.025quant", "0.975quant")])
+  is_in_interval <- lapply(1:nbr, function(i) beta >= interval[[i]]["0.025quant"] && beta <= interval[[i]]["0.975quant"])
+  CI <- (sum(unlist(is_in_interval)) / nbr) * 100
+  return(CI)
+}
+
+CI(model_gSEM)
 ## Beta boxplots
 combined <- rbind(bru_beta_NULL, bru_beta_spatial, bru_beta_RSR, bru_beta_spatial_plus, bru_beta_spatial_plus2)
 
