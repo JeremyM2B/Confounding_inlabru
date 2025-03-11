@@ -37,10 +37,6 @@ Qu_s <- inla.spde.precision(spde_s, theta = c(0, 1))
 
 u_s <- inla.qsample(n = 1, Q = Qu_s, seed = seed)
 
-## Plot fields
-local.plot.field(u_xs[, 1] - mean(u_xs[, 1]), mesh.sim)
-local.plot.field(u_s[, 1] - mean(u_s[, 1]), mesh.sim)
-
 ## Simulate at measurement locations
 set.seed(123)
 
@@ -59,18 +55,6 @@ for (i in 1:n_sim) {
   B <- inla.spde.make.A(mesh = mesh.sim, loc = loc.data[[i]])
   u_s_s[, i] <- drop(B %*% u_s[, 1])
 }
-
-quilt.plot(
-  x = loc.data[[1]][, 1], y = loc.data[[1]][, 2], z = u_s_xs[, 1], nx = 80, ny = 80,
-  col = plasma(101), main = "Field projected to data locations",
-  zlim = range(u_s_xs)
-)
-
-quilt.plot(
-  x = loc.data[[1]][, 1], y = loc.data[[1]][, 2], z = u_s_s[, 1], nx = 80, ny = 80,
-  col = plasma(101), main = "Field projected to data locations",
-  zlim = range(u_s_s)
-)
 
 test <- c()
 test$lon <- loc.data[[1]][, 1]
@@ -95,7 +79,6 @@ generate_epsilon <- function() {
 epsilon_list <- lapply(1:n_sim, function(x) generate_epsilon())
 
 epsilon <- as(do.call(cbind, epsilon_list), "dgeMatrix")
-plot(density(epsilon_list[[1]]))
 
 ## Covariate x
 generate_epsilon_x <- function() {
@@ -170,7 +153,6 @@ model_function_NULL <- function(i) {
 
 model_NULL <- furrr::future_map(1:n_sim, model_function_NULL, .options = furrr_options(seed = 123))
 
-save(model_NULL, file = "result_simu/result_model_Null.Rda")
 # beta model NULL
 bru_beta_NULL <- list()
 bru_beta_NULL <- sapply(1:n_sim, function(i) model_NULL[[i]]$summary.fixed$mean)
@@ -201,8 +183,6 @@ DIC_model_NULL <- lapply(1:n_sim, function(i) model_NULL[[i]]$dic$dic) %>%
 names(DIC_model_NULL) <- "value"
 DIC_model_NULL$Group <- rep(c("DIC NULL"), each = n_sim)
 
-# rm(model_function_NULL, model_NULL)
-
 ### Spatial model ###
 plan(multisession, workers = 4)
 
@@ -210,21 +190,12 @@ model_function_spatial <- function(i) {
   bru(y ~ 0 + x + u_spa(geometry, model = spde_spat), family = "gaussian", data = df_sf_list[[i]])
 }
 
-model_function_spatial_gam <- function(i) {
-  gam(y ~ -1 + x + s(locx, locy, k = 300, fx = TRUE), family = gaussian(), data = df_sf_list[[i]])
-}
-
 # Apply the function to each element in parallel
-model_spatial <- furrr::future_map(1:n_sim, model_function_spatial_gam, .options = furrr_options(seed = 123))
-
-summary(model_spatial[[1]])$se[1]
-# save(model_spatial, file = "result_simu/result_model_Spatial.Rda")
+model_spatial <- furrr::future_map(1:n_sim, model_function_spatial, .options = furrr_options(seed = TRUE))
 
 # beta model spatial
 bru_beta_spatial <- list()
 bru_beta_spatial <- sapply(1:n_sim, function(i) model_spatial[[i]]$summary.fixed$mean)
-# bru_beta_spatial <- sapply(1:n_sim, function(i) model_spatial[[i]]$coefficients["x"])
-# bru_beta_spatial <- sapply(1:n_sim, function(i) summary(model_spatial[[i]])$se[1])
 bru_beta_spatial <- as.data.frame(bru_beta_spatial) %>% rename(value = "bru_beta_spatial")
 bru_beta_spatial$Group <- rep(c("beta spatial"), each = n_sim)
 
@@ -253,6 +224,8 @@ names(DIC_model_spatial) <- "value"
 DIC_model_spatial$Group <- rep(c("DIC spatial"), each = n_sim)
 
 CI(model_spatial)
+
+
 ### RSR model ###
 spde_RSR <- inla.spde2.pcmatern(
   mesh = mesh.sim,
@@ -355,7 +328,7 @@ plan(multisession, workers = 4)
 model_RSR_extra <- furrr::future_map(
   1:n_sim,
   model_function_RSR_extra,
-  .options = furrr_options(seed = 123)
+  .options = furrr_options(seed = TRUE)
 )
 # end_time <- Sys.time()
 # time_taken <- end_time - start_time
@@ -414,7 +387,6 @@ df_sf_list_new <- mapply(function(df, true, fit) {
 }, df_sf_list, x_true, x_fit) %>% as.data.frame()
 
 model_function_spatial_plus <- function(i) {
-  print(i)
   bru(
     y ~ 0 + fitted_x_bru +
       u(geometry, model = spde_spat),
@@ -422,8 +394,8 @@ model_function_spatial_plus <- function(i) {
   )
 }
 
-model_spatial_plus <- furrr::future_map(1:n_sim, model_function_spatial_plus, .options = furrr_options(seed = 123))
-save(model_spatial_plus, file = "result_simu/result_model_spatial_plus.Rda")
+model_spatial_plus <- furrr::future_map(1:n_sim, model_function_spatial_plus, .options = furrr_options(seed = TRUE))
+#save(model_spatial_plus, file = "result_simu/result_model_spatial_plus.Rda")
 
 # beta model spatial plus
 bru_beta_spatial_plus <- list()
@@ -459,7 +431,7 @@ DIC_model_spatial_plus$Group <- rep(c("DIC spatial plus"), each = n_sim)
 
 ### Spatial+ 2.0 ###
 
-dist <- lapply(df_sf_list, function(df) sp::spDists(coordinates(df[, c("locx", "locy")])))
+dist <- lapply(df_list, function(df) sp::spDists(coordinates(df[, c("locx", "locy")])))
 
 Q <- lapply(1:n_sim, function(i) inla.matern.cov(nu = 1 / 2, kappa = 3.1, dist[[i]]))
 Q_inv <- lapply(Q, function(i) solve(i))
@@ -500,7 +472,7 @@ fit_with_eigen_vectors <- function(nbr_eigen_vectors = 500,
 }
 
 model_function_spatial_plus2 <- function(i) {
-  dist <- sp::spDists(sp::coordinates(df_sf_list[[i]]))
+  dist <- sp::spDists(sp::coordinates(df_list[[i]]))
 
   Q <- inla.matern.cov(nu = 1 / 2, kappa = 3.1, dist)
   Q_inv <- solve(Q)
@@ -511,9 +483,6 @@ model_function_spatial_plus2 <- function(i) {
   coef <- solve(eigen.vect, df_sf_list[[i]]$x)
   fit_with_eigen_vectors(nbr_eigen_vectors = 400, data = df_sf_list[[i]], decomposition = coef, e_vect = eigen.vect)
 }
-plan(multisession, workers = 4)
-model_spatial_plus2 <- furrr::future_map(1:n_sim, model_function_spatial_plus2, .options = furrr_options(seed = 123))
-
 
 model_spatial_plus2 <- lapply(1:n_sim, function(i) fit_with_eigen_vectors(nbr_eigen_vectors = 400, data = df_sf_list[[i]], decomposition = coef[[i]], e_vect = eigen.vect[[i]]))
 
@@ -547,7 +516,7 @@ DIC_model_spatial_plus2 <- lapply(1:n_sim, function(i) model_spatial_plus2[[i]]$
 names(DIC_model_spatial_plus2) <- "value"
 DIC_model_spatial_plus2$Group <- rep(c("DIC spatial plus V2"), each = n_sim)
 
-rm(hyperparam, log_range_u, log_sigma_u, dist, Q, r, coef, model_spatial_plus2)
+#rm(hyperparam, log_range_u, log_sigma_u, dist, Q, r, coef, model_spatial_plus2)
 
 ### gSEM ###
 spde_spat <- inla.spde2.pcmatern(
@@ -557,11 +526,12 @@ spde_spat <- inla.spde2.pcmatern(
 )
 
 model_function_gSEM_bru <- function(i) {
-  f_X_hat <- bru(x ~ u(geometry, model = spde_spat), data = df_sf_list[[i]], family = "gaussian")
-  df_sf_list[[i]]$r_X <- df_sf_list[[i]]$x - f_X_hat$summary.fitted.values[1:n, ]$mean
-  f_Y_hat <- bru(y ~ u(geometry, model = spde_spat), data = df_sf_list[[i]], family = "gaussian")
-  df_sf_list[[i]]$r_Y <- df_sf_list[[i]]$y - f_Y_hat$summary.fitted.values[1:n, ]$mean
-  lm(r_Y ~ 0 + r_X, data = df_sf_list[[i]])
+  f_X_hat <- bru(x ~ u(geometry, model = spde_spat), data = df_sf_list[[i]], family = "gaussian")$summary.fitted.values[1:n, ]$mean
+  r_X <- df_sf_list[[i]]$x - f_X_hat
+  f_Y_hat <- bru(y ~ u(geometry, model = spde_spat), data = df_sf_list[[i]], family = "gaussian")$summary.fitted.values[1:n, ]$mean
+  r_Y <- df_sf_list[[i]]$y - f_Y_hat
+  model <- bru(r_Y ~ 0 + r_X, family = "gaussian")
+  return(model)
 }
 
 # start_time <- Sys.time()
@@ -572,60 +542,26 @@ model_gSEM_bru <- furrr::future_map(1:n_sim, model_function_gSEM_bru, .options =
 # time_taken <- end_time - start_time
 # print(paste("Time taken:", time_taken))
 
-model_gSEM[[1]]$summary.hyperpar$mean
-bru_beta_gSEM <- sapply(1:n_sim, function(i) model_gSEM[[i]]$summary.fixed$mean)
+bru_beta_gSEM <-list()
+bru_beta_gSEM <- sapply(1:n_sim, function(i) model_gSEM_bru[[i]]$summary.fixed$mean)
 bru_beta_gSEM <- as.data.frame(bru_beta_gSEM) %>% rename(value = "bru_beta_gSEM")
-bru_beta_gSEM$Group <- rep(c("beta gSEM"), each = n_sim)
-boxplot(bru_beta_gSEM$value)
+bru_beta_gSEM$Group <- rep(c("gSEM"), each=n_sim)
 
-bru_beta_gSEM_sd <- sapply(1:n_sim, function(i) model_gSEM[[i]]$summary.fixed$sd)
-WAIC_model_gSEM <- sapply(1:n_sim, function(i) model_gSEM[[i]]$dic$dic)
-DIC_model_gSEM <- sapply(1:n_sim, function(i) model_gSEM[[i]]$dic$dic)
-range_u <- sapply(1:n_sim, function(i) model_gSEM[[i]]$summary$dic)
-model_gSEM[[1]]$summary.
-mean(WAIC_model_gSEM)
-median(bru_beta_gSEM)
-sd(bru_beta_gSEM)
+bru_beta_gSEM_sd <- sapply(1:n_sim, function(i) model_gSEM_bru[[i]]$summary.fixed$sd)
+WAIC_model_gSEM <- sapply(1:n_sim, function(i) model_gSEM_bru[[i]]$dic$dic)
+DIC_model_gSEM <- sapply(1:n_sim, function(i) model_gSEM_bru[[i]]$dic$dic)
+range_u <- sapply(1:n_sim, function(i) model_gSEM_bru[[i]]$summary$dic)
 
-CI(model_gSEM)
-## Plot beta Standard error
-combined_sd <- rbind(bru_beta_sd_NULL, bru_beta_sd_spatial, bru_beta_sd_RSR, bru_beta_sd_spatial_plus, bru_beta_sd_spatial_plus2)
-
-ggplot(combined_sd, aes(x = "", y = value, fill = Group)) +
-  stat_boxplot(geom = "errorbar") +
-  geom_boxplot() +
-  labs(x = "", y = "Value", title = "Boxplot posterior beta sd") +
-  theme_minimal()
-
-
-## Plot WAIC
-combined_WAIC <- rbind(WAIC_model_NULL, WAIC_model_spatial, WAIC_model_RSR_formula, WAIC_model_spatial_plus, WAIC_model_spatial_plus2)
-
-ggplot(combined_WAIC, aes(x = "", y = value, fill = Group)) +
-  stat_boxplot(geom = "errorbar") +
-  geom_boxplot() +
-  labs(x = "", y = "Value", title = "Boxplot WAIC") +
-  theme_minimal()
-
-
-## Plot DIC
-combined_DIC <- rbind(DIC_model_NULL, DIC_model_spatial, DIC_model_RSR_formula, DIC_model_spatial_plus, DIC_model_spatial_plus2)
-
-ggplot(combined_DIC, aes(x = "", y = value, fill = Group)) +
-  stat_boxplot(geom = "errorbar") +
-  geom_boxplot() +
-  labs(x = "", y = "Value", title = "Boxplot DIC") +
-  theme_minimal()
-
+CI(model_gSEM_bru)
 
 ############################################## GAM #####################################################
-model_fx <- TRUE
+model_fx <- FALSE
 
 ## NULL
 model_GAM_function_NULL <- function(i) {
   mod <- lm(y ~ -1 + x, df_sf_list[[i]])
   bru_beta_hat <- mod$coefficients[1]
-  return(mod)
+  return(bru_beta_hat)
 }
 plan(multisession, workers = 4)
 model_GAM_NULL <- furrr::future_map(1:n_sim, model_GAM_function_NULL, .options = furrr_options(seed = TRUE))
@@ -637,21 +573,21 @@ bru_beta_GAM_NULL$Group <- rep(c("GAM NULL"), each = n_sim)
 
 ## spatial
 model_GAM_function_spatial <- function(i) {
-  mod <- gam(y ~ -1 + x + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], method = "GCV.Cp")
+  mod <- gam(y ~ -1 + x + s(locx, locy, k = 300, fx = model_fx), data = df_sf_list[[i]], method = "GCV.Cp")
   bru_beta_hat <- mod$coefficients[1]
-  return(mod)
+  return(bru_beta_hat)
 }
 plan(multisession, workers = 4)
 model_GAM_spatial <- furrr::future_map(1:n_sim, model_GAM_function_spatial, .options = furrr_options(seed = TRUE))
 r_X_values <- purrr::map_dbl(model_GAM_spatial, "x")
 bru_beta_GAM_spatial <- r_X_values
 bru_beta_GAM_spatial <- as.data.frame(bru_beta_GAM_spatial) %>% rename(value = "bru_beta_GAM_spatial")
-bru_beta_GAM_spatial$Group <- rep(c("GAM spatial"), each = n_sim)
+bru_beta_GAM_spatial$Group <- rep(c("GAM spatial"), each=n_sim)
 
 
 ## RSR
 model_GAM_function_RSR <- function(i) {
-  mod_list <- gam(y ~ x + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], fit = FALSE)
+  mod_list <- gam(y ~ x + s(locx, locy, k = 300, fx = model_fx), data = df_sf_list[[i]], fit = FALSE)
   B_sp <- mod_list$X[, -2]
   x <- df_sf_list[[i]]$x
   P <- 1 / sum(x^2) * x %*% t(x)
@@ -659,7 +595,7 @@ model_GAM_function_RSR <- function(i) {
   mod_list$X[, -2] <- B_sp_tilde
   mod <- gam(G = mod_list, method = "GCV.Cp")
   bru_beta_hat <- mod$coefficients[2]
-  return(mod)
+  return(bru_beta_hat)
 }
 plan(multisession, workers = 4)
 model_GAM_RSR <- furrr::future_map(1:n_sim, model_GAM_function_RSR, .options = furrr_options(seed = TRUE))
@@ -670,13 +606,13 @@ bru_beta_GAM_RSR$Group <- rep(c("GAM RSR"), each = n_sim)
 
 ## gSEM
 model_GAM_function_gSEM <- function(i) {
-  f_X_hat <- gam(x ~ -1 + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
+  f_X_hat <- gam(x ~ -1 + s(locx, locy, k = 300, fx = model_fx), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
   r_X <- df_sf_list[[i]]$x - f_X_hat
-  f_Y_hat <- gam(y ~ -1 + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
+  f_Y_hat <- gam(y ~ -1 + s(locx, locy, k = 300, fx = model_fx), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
   r_Y <- df_sf_list[[i]]$y - f_Y_hat
   mod <- lm(r_Y ~ -1 + r_X)
   bru_beta_hat <- mod$coefficients[1]
-  return(mod)
+  return(bru_beta_hat)
 }
 plan(multisession, workers = 4)
 model_GAM_gSEM <- furrr::future_map(1:n_sim, model_GAM_function_gSEM, .options = furrr_options(seed = TRUE))
@@ -688,11 +624,11 @@ bru_beta_GAM_gSEM$Group <- rep(c("GAM gSEM"), each = n_sim)
 
 ## GAM spatial+
 model_function_GAM_spatialplus <- function(i) {
-  f_X_hat <- gam(x ~ -1 + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
+  f_X_hat <- gam(x ~ -1 + s(locx, locy, k = 300, fx = model_fx), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
   r_X <- df_sf_list[[i]]$x - f_X_hat
-  mod <- gam(y ~ -1 + r_X + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], method = "GCV.Cp")
+  mod <- gam(y ~ -1 + r_X + s(locx, locy, k = 300, fx = model_fx), data = df_sf_list[[i]], method = "GCV.Cp")
   bru_beta_hat <- mod$coefficients[1]
-  return(mod)
+  return(bru_beta_hat)
 }
 plan(multisession, workers = 4)
 model_GAM_spatialplus <- furrr::future_map(1:n_sim, model_function_GAM_spatialplus, .options = furrr_options(seed = TRUE))
@@ -750,6 +686,33 @@ ggplot(combined, aes(x = "", y = value, fill = Group)) +
   geom_hline(yintercept = beta, linetype = "dashed", color = "red") +
   theme_minimal()
 
-sd(beta_RSR_extra_RSR$value)
-sd(beta_RSR_extra_spat$value)
-sd(beta_RSR_formula_RSR$value)
+
+## Plot beta Standard error
+combined_sd <- rbind(bru_beta_sd_NULL, bru_beta_sd_spatial, bru_beta_sd_RSR, bru_beta_sd_spatial_plus, bru_beta_sd_spatial_plus2)
+
+ggplot(combined_sd, aes(x = "", y = value, fill = Group)) +
+  stat_boxplot(geom = "errorbar") +
+  geom_boxplot() +
+  labs(x = "", y = "Value", title = "Boxplot posterior beta sd") +
+  theme_minimal()
+
+
+## Plot WAIC
+combined_WAIC <- rbind(WAIC_model_NULL, WAIC_model_spatial, WAIC_model_RSR_formula, WAIC_model_spatial_plus, WAIC_model_spatial_plus2)
+
+ggplot(combined_WAIC, aes(x = "", y = value, fill = Group)) +
+  stat_boxplot(geom = "errorbar") +
+  geom_boxplot() +
+  labs(x = "", y = "Value", title = "Boxplot WAIC") +
+  theme_minimal()
+
+
+## Plot DIC
+combined_DIC <- rbind(DIC_model_NULL, DIC_model_spatial, DIC_model_RSR_formula, DIC_model_spatial_plus, DIC_model_spatial_plus2)
+
+ggplot(combined_DIC, aes(x = "", y = value, fill = Group)) +
+  stat_boxplot(geom = "errorbar") +
+  geom_boxplot() +
+  labs(x = "", y = "Value", title = "Boxplot DIC") +
+  theme_minimal()
+
