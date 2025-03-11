@@ -10,7 +10,7 @@ library(dplyr)
 library(fmesher)
 library(INLA)
 library(inlabru)
-library(INLAutils)
+library(mgcv)
 
 # set option
 select <- dplyr::select
@@ -91,14 +91,13 @@ ggplot() +
     theme_bw() +
     labs(x = "", y = "")
 
-
 # make spde
 spde <- inla.spde2.pcmatern(
+    # alpha = 1.000001,
     mesh = new_mesh,
     prior.range = c(60000, 0.05), # P(range < 60000) = 0.05
     prior.sigma = c(5, 0.05) # P(sigma > 5) = 0.05,
 )
-
 
 ################################# Models implementation #######################################
 
@@ -114,10 +113,10 @@ res_null <- bru(
         verbose = FALSE
     )
 )
-# summary(res_null)
+summary(res_null)
 
 ############# Spatial model
-
+### With inlabru
 res_spatial <- bru(
     components = log(Cd_mousse) ~ -1 + intercept(1) + EMEP_air + u(geometry, model = spde),
     family = "gaussian",
@@ -128,11 +127,15 @@ res_spatial <- bru(
         verbose = FALSE
     )
 )
-# summary(res_spatial)
+summary(res_spatial)
+
+### With mgcv
+res_spatial_gam <- gam(log(Cd_mousse) ~ EMEP_air + s(lon, lat, k = 250, fx = FALSE), data = df_FRANCE_count, method = "GCV.Cp")
+summary(res_spatial_gam)
 
 ############# RSR model
-
-res_RSR_with_i <- bru(
+### With inlabru
+res_RSR_formula <- bru(
     components = ~ -1 + intercept(1) + X_Effect(EMEP_air) + u(geometry, model = spde),
     like(
         formula = log(Cd_mousse) ~ 0 + intercept + X_Effect + u - (sum(u) * sum(EMEP_air^2) + EMEP_air * (length(EMEP_air) * sum(EMEP_air * u) - sum(u) * sum(EMEP_air)) - sum(EMEP_air * u) * sum(EMEP_air)) / (length(EMEP_air) * sum(EMEP_air^2) - sum(EMEP_air)^2),
@@ -145,17 +148,37 @@ res_RSR_with_i <- bru(
         verbose = FALSE
     )
 )
-# summary(res_RSR_with_i)
+summary(res_RSR_formula)
+
+############# RSR model with extraconstr
+A.rsr <- inla.spde.make.A(new_mesh, loc = df_FRANCE_count$geometry)
+e.rsr <- rep(0, nrow(A.rsr))
+res_RSR_extra <- bru(
+    components = ~ -1 + intercept(1) + X_Effect(EMEP_air) + u(geometry, model = spde, extraconstr = list(A = A.rsr, e = e.rsr)),
+    like(
+        formula = log(Cd_mousse) ~ .,
+        family = "gaussian",
+        data = df_FRANCE_count
+    ),
+    options = list(
+        control.compute = list(waic = TRUE, cpo = FALSE),
+        control.inla = list(int.strategy = "eb"),
+        verbose = FALSE
+    )
+)
+
+summary(res_RSR_extra)
 
 ############# Spatial+ model
-spde_X <- spde <- inla.spde2.pcmatern(
+### With inlabru
+spde_X <- inla.spde2.pcmatern(
     mesh = new_mesh,
     prior.range = c(130000, 0.05), # P(range < 130000) = 0.05
     prior.sigma = c(13, 0.05) # P(sigma > 13) = 0.05,
 )
 
 res_EMEP <- bru(
-    components = ~ -1 + u(geometry, model = spde_X),
+    components = ~ -1 + intercept(1) + u(geometry, model = spde_X),
     like(
         formula = EMEP_air ~ .,
         family = "gaussian",
@@ -187,7 +210,13 @@ res_spatial_plus1 <- bru(
         verbose = FALSE
     )
 )
-# summary(res_spatial_plus1)
+summary(res_spatial_plus1)
+
+### With mgcv
+f_X_hat <- gam(EMEP_air ~ s(lon, lat, k = 250), data = df_FRANCE_count, method = "GCV.Cp")
+df_FRANCE_count$fitted_EMEP_air_bru <- df_FRANCE_count$EMEP_air - f_X_hat$fitted.values
+res_gam <- gam(log(Cd_mousse) ~ fitted_EMEP_air_bru + s(lon, lat, k = 250, fx = FALSE), data = df_FRANCE_count, method = "GCV.Cp")
+summary(res_gam)
 
 ############# Spatial+ 2.0 model
 hyperparam <- res_spatial$summary.hyperpar
@@ -233,5 +262,54 @@ fit_with_eigen_vectors <- function(nbr_eigen_vectors = 445,
     return(res)
 }
 
-res_spatial_plus2 <- fit_with_eigen_vectors(310)
-# summary(res_spatial_plus2)
+res_spatial_plus2 <- fit_with_eigen_vectors(350)
+summary(res_spatial_plus2)
+
+############# gSEM model
+### With inlabru
+f_X_hat_res <- bru(EMEP_air ~ -1 + intercept(1) + u(geometry, model = spde), data = df_FRANCE_count, family = "gaussian")
+df_FRANCE_count$r_X <- df_FRANCE_count$EMEP_air - f_X_hat_res$summary.fitted.values[1:445, ]$mean
+
+f_Y_hat_res <- bru(log(Cd_mousse) ~ -1 + intercept(1) + u(geometry, model = spde), data = df_FRANCE_count, family = "gaussian")
+df_FRANCE_count$r_Y <- log(df_FRANCE_count$Cd_mousse) - f_Y_hat_res$summary.fitted.values[1:445, ]$mean
+
+res_gSEM <- bru(r_Y ~ -1 + intercept(1) + r_X, family = "gaussian", data = df_FRANCE_count)
+
+### With mgcv
+f_X_hat <- gam(EMEP_air ~ s(lon, lat, k = 250, fx = FALSE), data = df_FRANCE_count, method = "GCV.Cp")
+df_FRANCE_count$r_X <- df_FRANCE_count$EMEP_air - f_X_hat$fitted.values
+f_Y_hat <- gam(log(Cd_mousse) ~ s(lon, lat, k = 250, fx = FALSE), data = df_FRANCE_count, method = "GCV.Cp")
+df_FRANCE_count$r_Y <- log(df_FRANCE_count$Cd_mousse) - f_Y_hat$fitted.values
+mod <- lm(r_Y ~ r_X, data = df_FRANCE_count)
+summary(mod)
+
+# Boxplots as a function of the number
+make_boxplot_sensiblity <- function(max = 445, min = 1, precision = 10) {
+    N <- round(seq(min, max, length.out = precision))
+    sensibility_df <- data.frame(null = matrix(NA, nrow = 3, ncol = 1))
+
+    for (n in N) {
+        print(n)
+        model <- fit_with_eigen_vectors(n)
+        col_name <- n # paste("eigen", n, sep = "")
+        sensibility_df[, col_name] <- as.vector(
+            unlist(
+                model$summary.fixed[2, 3:5]
+            )
+        )
+    }
+
+    sensibility_df <- subset(sensibility_df, select = -null)
+    return(sensibility_df)
+}
+
+sensibility_bx <- make_boxplot_sensiblity(max = 445, min = 1, precision = 445)
+
+# png(file = "bxp_sensi_eigen_data.png", width = 1000, height = 500)
+boxplot(sensibility_bx,
+    names = names(sensibility_bx),
+    xlab = "k",
+    ylab = "Beta Estimates"
+    #  = paste("Distribution of Beta Estimates Across Different Numbers of Eigenvectors in X Decomposition with Spatial+ v2")
+)
+# dev.off()
