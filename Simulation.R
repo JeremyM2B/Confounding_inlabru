@@ -585,25 +585,6 @@ bru_beta_GAM_spatial <- as.data.frame(bru_beta_GAM_spatial) %>% rename(value = "
 bru_beta_GAM_spatial$Group <- rep(c("GAM spatial"), each=n_sim)
 
 
-## RSR
-model_GAM_function_RSR <- function(i) {
-  mod_list <- gam(y ~ x + s(locx, locy, k = 300, fx = model_fx), data = df_sf_list[[i]], fit = FALSE)
-  B_sp <- mod_list$X[, -2]
-  x <- df_sf_list[[i]]$x
-  P <- 1 / sum(x^2) * x %*% t(x)
-  B_sp_tilde <- (diag(x = 1, nrow = n, ncol = n) - P) %*% B_sp
-  mod_list$X[, -2] <- B_sp_tilde
-  mod <- gam(G = mod_list, method = "GCV.Cp")
-  bru_beta_hat <- mod$coefficients[2]
-  return(bru_beta_hat)
-}
-plan(multisession, workers = 4)
-model_GAM_RSR <- furrr::future_map(1:n_sim, model_GAM_function_RSR, .options = furrr_options(seed = TRUE))
-r_X_values <- purrr::map_dbl(model_GAM_RSR, "x")
-bru_beta_GAM_RSR <- r_X_values
-bru_beta_GAM_RSR <- as.data.frame(bru_beta_GAM_RSR) %>% rename(value = "bru_beta_GAM_RSR")
-bru_beta_GAM_RSR$Group <- rep(c("GAM RSR"), each = n_sim)
-
 ## gSEM
 model_GAM_function_gSEM <- function(i) {
   f_X_hat <- gam(x ~ -1 + s(locx, locy, k = 300, fx = model_fx), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
@@ -640,8 +621,8 @@ bru_beta_GAM_spatialplus$Group <- rep(c("GAM spatial+"), each = n_sim)
 
 ## Plot beta bru + GAM
 
-combined <- rbind(bru_beta_NULL, bru_beta_spatial, bru_beta_RSR, bru_beta_RSR_extra, bru_beta_gSEM, bru_beta_spatial_plus, bru_beta_spatial_plus2, bru_beta_GAM_spatial, bru_beta_GAM_RSR, bru_beta_GAM_gSEM, bru_beta_GAM_spatialplus)
-desired_order <- c("beta Null", "beta Spatial", "beta RSR extra", "beta RSR formula", "beta gSEM", "beta spatial plus", "beta spatial plus V2", "GAM spatial", "GAM RSR", "GAM gSEM", "GAM spatial+")
+combined <- rbind(bru_beta_NULL, bru_beta_spatial, bru_beta_RSR, bru_beta_RSR_extra, bru_beta_gSEM, bru_beta_spatial_plus, bru_beta_spatial_plus2, bru_beta_GAM_spatial, bru_beta_GAM_gSEM, bru_beta_GAM_spatialplus)
+desired_order <- c("beta Null", "beta Spatial", "beta RSR extra", "beta RSR formula", "beta gSEM", "beta spatial plus", "beta spatial plus V2", "GAM spatial", "GAM gSEM", "GAM spatial+")
 
 combined$Group <- factor(combined$Group, levels = desired_order)
 
