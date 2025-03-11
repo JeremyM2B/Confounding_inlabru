@@ -712,4 +712,14 @@ desired_order <- c('beta Null', 'beta Spatial', "beta RSR extra", 'beta RSR form
 
 combined$Group <- factor(combined$Group, levels = desired_order)
                            
-                           
+ ggplot(combined, aes(x = Group, y = value, fill=Group)) +
+  geom_blank(data = subset(combined_GAM, Group == "beta SVC")) +
+  stat_boxplot(geom = "errorbar") +
+  geom_boxplot() +
+  #scale_fill_discrete(breaks=c('beta NULL', 'beta RSR i', 'beta spatial', "beta spatial plus", "beta spatial plus V2", "beta SVC plus", "beta SVC")) +
+  labs(x = "", y = "", title = expression(hat(beta))) +
+  geom_hline(yintercept = beta, linetype = "dashed", color= "red") +
+  geom_vline(xintercept = 7.5, linetype = "dashed", color = "black") +
+  #guides(fill = guide_legend(override.aes = list(alpha = c(1, 1, 1, 1, 1, 1, 0)))) +
+  theme_minimal() +
+  theme(legend.position = "none", plot.title = element_text(hjust = 0.5) )
