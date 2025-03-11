@@ -625,35 +625,35 @@ ggplot(combined_DIC, aes(x = "", y = value, fill = Group)) +
 model_fx = TRUE                      
 
 ## NULL
-model_function_NULL <- function(i) {
+model_GAM_function_NULL <- function(i) {
   mod <- lm(y ~ -1 + x, df_sf_list[[i]])
   bru_beta_hat <- mod$coefficients[1]
   return(mod)
 }
 plan(multisession, workers = 4)
-model_NULL<- furrr::future_map(1:n_sim, model_function_NULL, .options = furrr_options(seed = TRUE))
-r_X_values <- purrr::map_dbl(model_NULL, "x")
+model_GAM_NULL<- furrr::future_map(1:n_sim, model_GAM_function_NULL, .options = furrr_options(seed = TRUE))
+r_X_values <- purrr::map_dbl(model_GAM_NULL, "x")
 bru_beta_GAM_NULL <- r_X_values
 bru_beta_GAM_NULL <- as.data.frame(bru_beta_GAM_NULL) %>% rename(value = "bru_beta_GAM_NULL")
 bru_beta_GAM_NULL$Group <- rep(c("GAM NULL"), each=n_sim)
 
 
 ## spatial
-model_function_spatial <- function(i) {
+model_GAM_function_spatial <- function(i) {
   mod <- gam(y ~ -1 + x + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], method = "GCV.Cp")
   bru_beta_hat <- mod$coefficients[1]
   return(mod)
 }
 plan(multisession, workers = 4)
-model_spatial <- furrr::future_map(1:n_sim, model_function_spatial, .options = furrr_options(seed = TRUE))
-r_X_values <- purrr::map_dbl(model_spatial, "x")
+model_GAM_spatial <- furrr::future_map(1:n_sim, model_GAM_function_spatial, .options = furrr_options(seed = TRUE))
+r_X_values <- purrr::map_dbl(model_GAM_spatial, "x")
 bru_beta_GAM_spatial <- r_X_values
 bru_beta_GAM_spatial <- as.data.frame(bru_beta_GAM_spatial) %>% rename(value = "bru_beta_GAM_spatial")
 bru_beta_GAM_spatial$Group <- rep(c("GAM spatial"), each=n_sim)
 
 
 ## RSR
-model_function_RSR <- function(i) {
+model_GAM_function_RSR <- function(i) {
   mod_list <- gam(y ~ x + s(locx, locy, k=300, fx=model_fx, sp = 1), data=df_sf_list[[i]], fit=FALSE)
   B_sp <- mod_list$X[,-2]
   x <- df_sf_list[[i]]$x
@@ -665,14 +665,14 @@ model_function_RSR <- function(i) {
   return(mod)
 }
 plan(multisession, workers = 4)
-model_RSR <- furrr::future_map(1:n_sim, model_function_RSR, .options = furrr_options(seed = TRUE))
-r_X_values <- purrr::map_dbl(model_RSR, "x")
+model_GAM_RSR <- furrr::future_map(1:n_sim, model_GAM_function_RSR, .options = furrr_options(seed = TRUE))
+r_X_values <- purrr::map_dbl(model_GAM_RSR, "x")
 bru_beta_GAM_RSR <- r_X_values
 bru_beta_GAM_RSR <- as.data.frame(bru_beta_GAM_RSR) %>% rename(value = "bru_beta_GAM_RSR")
 bru_beta_GAM_RSR$Group <- rep(c("GAM RSR"), each=n_sim)
 
 ## gSEM
-model_function_gSEM <- function(i) {
+model_GAM_function_gSEM <- function(i) {
   f_X_hat <- gam(x ~ -1 + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
   r_X <- df_sf_list[[i]]$x - f_X_hat
   f_Y_hat <- gam(y ~ -1 + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
@@ -682,8 +682,8 @@ model_function_gSEM <- function(i) {
   return(mod)
 }
 plan(multisession, workers = 4)
-model_gSEM <- furrr::future_map(1:n_sim, model_function_gSEM, .options = furrr_options(seed = TRUE))
-r_X_values <- purrr::map_dbl(model_gSEM, "r_X")
+model_GAM_gSEM <- furrr::future_map(1:n_sim, model_GAM_function_gSEM, .options = furrr_options(seed = TRUE))
+r_X_values <- purrr::map_dbl(model_GAM_gSEM, "r_X")
 bru_beta_GAM_gSEM <- r_X_values
 bru_beta_GAM_gSEM <- as.data.frame(bru_beta_GAM_gSEM) %>% rename(value = "bru_beta_GAM_gSEM")
 bru_beta_GAM_gSEM$Group <- rep(c("GAM gSEM"), each=n_sim)
