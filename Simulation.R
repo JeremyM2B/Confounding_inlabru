@@ -6,6 +6,7 @@ library(ggplot2)
 library(fields)
 library(furrr)
 library(knitr)
+library(mgcv)
 
 
 ## Fixed parameters
@@ -248,7 +249,7 @@ names(DIC_model_spatial) <- "value"
 DIC_model_spatial$Group <- rep(c("DIC spatial"), each = n_sim)
 
 
-### RSR model ###
+### RSR formula model ###
 spde_RSR <- inla.spde2.pcmatern(
   mesh = mesh.sim,
   prior.range = c(15, .9999), # P(range < 15) = 0.9999
@@ -286,7 +287,7 @@ model_RSR <- furrr::future_map(1:n_sim, model_function_RSR, .options = furrr_opt
 bru_beta_RSR <- list()
 bru_beta_RSR <- sapply(1:n_sim, function(i) model_RSR[[i]]$summary.fixed$mean)
 bru_beta_RSR <- as.data.frame(bru_beta_RSR) %>% rename(value = "bru_beta_RSR")
-bru_beta_RSR$Group <- rep(c("beta RSR"), each = n_sim)
+bru_beta_RSR$Group <- rep(c("beta RSR formula"), each = n_sim)
 
 # beta sd model RSR
 bru_beta_sd_RSR <- list()
@@ -560,6 +561,10 @@ plan(multisession, workers = 4)
 model_gSEM <- furrr::future_map(1:n_sim, model_function_gSEM_bru, .options = furrr_options(seed = 123))
 
 bru_beta_gSEM <- sapply(1:n_sim, function(i) model_gSEM[[i]]$summary.fixed$mean)
+bru_beta_gSEM <- as.data.frame(bru_beta_gSEM) %>% rename(value = "bru_beta_gSEM")
+bru_beta_gSEM$Group <- rep(c("beta gSEM"), each=n_sim)
+boxplot(bru_beta_gSEM$value)
+                        
 bru_beta_gSEM_sd <- sapply(1:n_sim, function(i) model_gSEM[[i]]$summary.fixed$sd)
 WAIC_model_gSEM <- sapply(1:n_sim, function(i) model_gSEM[[i]]$waic$waic)
 DIC_model_gSEM <- sapply(1:n_sim, function(i) model_gSEM[[i]]$dic$dic)
@@ -576,7 +581,7 @@ CI <- function(model, nbr = n_sim, beta = 3) {
 
 CI(model_gSEM)
 ## Beta boxplots
-combined <- rbind(bru_beta_NULL, bru_beta_spatial, bru_beta_RSR, bru_beta_spatial_plus, bru_beta_spatial_plus2)
+combined <- rbind(bru_beta_NULL, bru_beta_spatial, bru_beta_RSR, bru_beta_gSEM, bru_beta_spatial_plus, bru_beta_spatial_plus2)
 
 ggplot(combined, aes(x = "", y = value, fill = Group)) +
   stat_boxplot(geom = "errorbar") +
@@ -614,3 +619,97 @@ ggplot(combined_DIC, aes(x = "", y = value, fill = Group)) +
   geom_boxplot() +
   labs(x = "", y = "Value", title = "Boxplot DIC") +
   theme_minimal()
+
+
+############################################## GAM #####################################################
+model_fx = TRUE                      
+
+## NULL
+model_function_NULL <- function(i) {
+  mod <- lm(y ~ -1 + x, df_sf_list[[i]])
+  bru_beta_hat <- mod$coefficients[1]
+  return(mod)
+}
+plan(multisession, workers = 4)
+model_NULL<- furrr::future_map(1:n_sim, model_function_NULL, .options = furrr_options(seed = TRUE))
+r_X_values <- purrr::map_dbl(model_NULL, "x")
+bru_beta_GAM_NULL <- r_X_values
+bru_beta_GAM_NULL <- as.data.frame(bru_beta_GAM_NULL) %>% rename(value = "bru_beta_GAM_NULL")
+bru_beta_GAM_NULL$Group <- rep(c("GAM NULL"), each=n_sim)
+
+
+## spatial
+model_function_spatial <- function(i) {
+  mod <- gam(y ~ -1 + x + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], method = "GCV.Cp")
+  bru_beta_hat <- mod$coefficients[1]
+  return(mod)
+}
+plan(multisession, workers = 4)
+model_spatial <- furrr::future_map(1:n_sim, model_function_spatial, .options = furrr_options(seed = TRUE))
+r_X_values <- purrr::map_dbl(model_spatial, "x")
+bru_beta_GAM_spatial <- r_X_values
+bru_beta_GAM_spatial <- as.data.frame(bru_beta_GAM_spatial) %>% rename(value = "bru_beta_GAM_spatial")
+bru_beta_GAM_spatial$Group <- rep(c("GAM spatial"), each=n_sim)
+
+
+## RSR
+model_function_RSR <- function(i) {
+  mod_list <- gam(y ~ x + s(locx, locy, k=300, fx=model_fx, sp = 1), data=df_sf_list[[i]], fit=FALSE)
+  B_sp <- mod_list$X[,-2]
+  x <- df_sf_list[[i]]$x
+  P <- 1/sum(x^2)*x%*%t(x)
+  B_sp_tilde <- (diag(x=1,nrow=n,ncol=n)-P)%*%B_sp
+  mod_list$X[,-2] <- B_sp_tilde
+  mod <- gam(G=mod_list,method="GCV.Cp")
+  bru_beta_hat <- mod$coefficients[2]
+  return(mod)
+}
+plan(multisession, workers = 4)
+model_RSR <- furrr::future_map(1:n_sim, model_function_RSR, .options = furrr_options(seed = TRUE))
+r_X_values <- purrr::map_dbl(model_RSR, "x")
+bru_beta_GAM_RSR <- r_X_values
+bru_beta_GAM_RSR <- as.data.frame(bru_beta_GAM_RSR) %>% rename(value = "bru_beta_GAM_RSR")
+bru_beta_GAM_RSR$Group <- rep(c("GAM RSR"), each=n_sim)
+
+## gSEM
+model_function_gSEM <- function(i) {
+  f_X_hat <- gam(x ~ -1 + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
+  r_X <- df_sf_list[[i]]$x - f_X_hat
+  f_Y_hat <- gam(y ~ -1 + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
+  r_Y <- df_sf_list[[i]]$y - f_Y_hat
+  mod <- lm(r_Y ~ -1 + r_X)
+  bru_beta_hat <- mod$coefficients[1]
+  return(mod)
+}
+plan(multisession, workers = 4)
+model_gSEM <- furrr::future_map(1:n_sim, model_function_gSEM, .options = furrr_options(seed = TRUE))
+r_X_values <- purrr::map_dbl(model_gSEM, "r_X")
+bru_beta_GAM_gSEM <- r_X_values
+bru_beta_GAM_gSEM <- as.data.frame(bru_beta_GAM_gSEM) %>% rename(value = "bru_beta_GAM_gSEM")
+bru_beta_GAM_gSEM$Group <- rep(c("GAM gSEM"), each=n_sim)
+
+
+##GAM spatial+
+model_function_GAM_spatialplus <- function(i) {
+  f_X_hat <- gam(x ~ -1 + s(locx, locy, k = 300, fx = model_fx, sp = 1), data = df_sf_list[[i]], method = "GCV.Cp")$fitted.values
+  r_X <- df_sf_list[[i]]$x - f_X_hat
+  mod <- gam(y ~ -1 + r_X + s(locx, locy, k=300, fx=model_fx, sp = 1), data=df_sf_list[[i]], method="GCV.Cp")
+  bru_beta_hat <- mod$coefficients[1]
+  return(mod)
+}
+plan(multisession, workers = 4)
+model_GAM_spatialplus<- furrr::future_map(1:n_sim, model_function_GAM_spatialplus, .options = furrr_options(seed = TRUE))
+r_X_values <- purrr::map_dbl(model_GAM_spatialplus, "r_X")
+bru_beta_GAM_spatialplus <- r_X_values
+bru_beta_GAM_spatialplus <- as.data.frame(bru_beta_GAM_spatialplus) %>% rename(value = "bru_beta_GAM_spatialplus")
+bru_beta_GAM_spatialplus$Group <- rep(c("GAM spatial+"), each=n_sim)
+
+
+## Plot beta bru + GAM
+
+combined <- rbind(bru_beta_NULL, bru_beta_spatial, bru_beta_RSR, bru_beta_RSR_extra, bru_beta_gSEM, bru_beta_spatial_plus, bru_beta_spatial_plus2, bru_beta_GAM_spatial, bru_beta_GAM_RSR, bru_beta_GAM_gSEM, bru_beta_GAM_spatialplus)
+desired_order <- c('beta Null', 'beta Spatial', "beta RSR extra", 'beta RSR formula', "beta gSEM", 'beta spatial plus', 'beta spatial plus V2', 'GAM spatial', 'GAM RSR', "GAM gSEM", 'GAM spatial+')
+
+combined$Group <- factor(combined$Group, levels = desired_order)
+                           
+                           
