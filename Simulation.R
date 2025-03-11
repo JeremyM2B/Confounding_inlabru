@@ -549,7 +549,7 @@ DIC_model_spatial_plus2$Group <- rep(c("DIC spatial plus V2"), each = n_sim)
 
 rm(hyperparam, log_range_u, log_sigma_u, dist, Q, r, coef, model_spatial_plus2)
 
-# gSEM
+### gSEM ###
 spde_spat <- inla.spde2.pcmatern(
   mesh = mesh.sim,
   prior.range = c(0.05, 0.05), # P(range < 0.05) = 0.05
