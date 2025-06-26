@@ -32,3 +32,6 @@ Before running the scripts, make sure to load the necessary data from the data/f
 # Requirements
 
 Please ensure that the necessary packages are installed to run the R scripts.
+
+# DOI
+DOI: 10.5281/zenodo.15748177 
