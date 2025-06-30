@@ -12,7 +12,7 @@ This project includes various scripts and datasets used for simulations and appl
 
 - **data** folder contains:
 
-  - **regbiofr**: Contains the .shp shapefiles of France.
+  - **regbiofr.zip**: This file can be unzipped to extract the .shp shapefiles containing geographical data of France.
   
   - **df_FRANCE.Rdata**: Contains data on Cadmium (Cd) concentrations in mosses throughout France, along with their coordinates.
   
