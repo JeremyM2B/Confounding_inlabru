@@ -35,3 +35,6 @@ Please ensure that the necessary packages are installed to run the R scripts.
 
 # DOI
 DOI: 10.5281/zenodo.15748177 
+
+# Data availability statement
+Data on Cd concentrations in mosses are publicly available on request from Sébastien Leblond (sebastien.leblond@mnhn.fr) or Caroline Meyer (caroline.meyer@mnhn.fr). Data on Cd concentrations in the air are publicly available on the website https://www.emep.int/ and on request from msc-east@ijs.si \citep{Ilyin2005modelling}. All models used for this work are publicly available. The localisation of the data can be accessed via the following dataset on the Global Biodiversity Information Facility (\href{https://www.gbif.org/dataset/166cbacd-528a-4a84-b1db-0177b50ac946}{GBIF}):  https://doi.org/10.15468/c2bqic. Information regarding the Cd measurements in mosses is available at: https://bramm.mnhn.fr/cadmium-cd/ \citep{inventaire2017bramm}. The source code is available in the following repositories: (\href{https://github.com/JeremyM2B/Confounding_inlabru}{github}). The repositories were archived on Zenodo at the time of this publication (\href{https://doi.org/10.5281/zenodo.15748177}{Lamouroux et al. (2025)})\
